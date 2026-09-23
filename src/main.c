@@ -549,6 +549,8 @@ static int listed(const js_t *list, const char *event)
 static void on_event(const char *event, const js_t *data)
 {
     int ended = strcmp(event, "job.ended") == 0;
+    if (strncmp(event, "ext.", 4) == 0)
+        say("the host says %s%s%s", event, js_get(data, "reason") ? ": " : "", js_str(js_get(data, "reason"), ""));
     pthread_mutex_lock(&mu);
     if (nevents == LOG_EVENTS)
         memmove(events, events + 1, sizeof(events[0]) * (LOG_EVENTS - 1)), nevents--;

@@ -25,7 +25,8 @@ const char *const rules_action_types[] = { "notify", "http", "mqtt", "hold_until
 const char *const rules_known_events[] = {
     "job.arming", "job.armed", "job.paused", "job.resumed", "job.ended", "alarm", "cooling.verdict", "lid",
     "interlock", "mode.changed", "controller.started", "controller.stopped", "homing.started", "homing.completed",
-    "homing.failed", "motors.released", "motors.energized", "lease.changed", NULL,
+    "homing.failed", "motors.released", "motors.energized", "lease.changed", "button", "update.available",
+    "setup.flag", "telemetry.tick", "ext.will_freeze", "ext.thawed", "ext.shutdown", NULL,
 };
 static const char *const services[] = { "ntfy", "pushover", "telegram", "discord", "webhook", NULL };
 

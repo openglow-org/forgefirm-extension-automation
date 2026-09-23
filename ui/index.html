@@ -52,6 +52,7 @@ table { border-collapse: collapse; width: 100%; } td { padding: 2px 6px; border-
     <option value="done">Tell me when a job ends</option>
     <option value="alarm">Tell me when a job stops for an alarm</option>
     <option value="paused">Tell me when a job pauses</option>
+    <option value="update">Tell me when new firmware is out</option>
     <option value="exhaust">Run the exhaust (a smart plug) for each job</option>
     <option value="wait">Hold each job until the exhaust is on</option>
     <option value="mqtt">Send every event to MQTT</option>
@@ -410,6 +411,7 @@ function addPreset() {
   if (p === 'done') return edit(notifyRule('job-done', 'A job ends', ['job.ended'], { result: 'ended' }, 'The job is done.'));
   if (p === 'alarm') return edit(notifyRule('job-alarm', 'A job stops for an alarm', ['job.ended'], { result: 'alarm' }, 'The job stopped for an alarm.'));
   if (p === 'paused') return edit(notifyRule('job-paused', 'A job pauses', ['job.paused'], null, 'The job paused: {data.reason}.'));
+  if (p === 'update') return edit(notifyRule('update', 'New firmware', ['update.available'], null, 'ForgeFIRM {data.version} is out.'));
   if (p === 'mqtt') return edit({ id: newId('mqtt'), name: 'Every event to MQTT', on: ['*'], do: [{ type: 'mqtt', broker: '', topic: 'forgefirm/{event}' }] });
   edit({ id: newId('rule'), name: '', on: ['job.ended'], do: [{ type: 'notify', service: 'ntfy', topic: '', message: '' }] });
 }
