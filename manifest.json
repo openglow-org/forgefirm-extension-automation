@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "id": "org.openglow.automation",
+  "name": "Notifications and automation",
+  "version": "0.1.0",
+  "description": "Rules that turn the machine's events into notifications, requests to your own devices (a smart plug for the exhaust, Home Assistant), and MQTT messages, and that can hold a job until the exhaust is on.",
+  "author": "OpenGlow",
+  "license": "MIT",
+  "homepage": "https://docs.forgefirm.org/usage/automation/",
+  "api": "0.1",
+  "runtime": "native",
+  "service": { "exec": "bin/run" },
+  "capabilities": [
+    "ui",
+    "events",
+    "hold",
+    "job_time.run",
+    "storage:1",
+    "net.outbound.operator",
+    "net.outbound:ntfy.sh:443",
+    "net.outbound:api.pushover.net:443",
+    "net.outbound:api.telegram.org:443",
+    "net.outbound:discord.com:443"
+  ]
+}

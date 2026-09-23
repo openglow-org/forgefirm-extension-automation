@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Notifications and automation</title>
+<!--
+  Copyright 2026 514 LLC d/b/a OpenGlow
+  Written by Scott Wiederhold
+  SPDX-License-Identifier: MIT
+
+  org.openglow.automation's page. It reaches nothing itself: its rules
+  and its status come from its own service through the panel's bridge
+  (ffx.service.call), and the places the service may reach from ffx.self().
+  The bridge client below is the SDK's sdk/js/ffx-bridge.js, pasted whole.
+-->
+<style>
+:root { color-scheme: light dark; --line: rgba(128,128,128,.35); --ok: #2e9d57; --bad: #d4453b; --warn: #c98a12; }
+body { font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 12px 14px 24px; }
+h3 { margin: 0 0 8px; font-size: 16px; }
+h4 { margin: 18px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; opacity: .75; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.card { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 6px 0; }
+.muted { opacity: .7; }
+.small { font-size: 12px; }
+.ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+button { font: inherit; padding: 3px 10px; border-radius: 4px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+button.primary { border-color: var(--ok); }
+button.danger { border-color: var(--bad); color: var(--bad); }
+input, select, textarea { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: inherit; }
+textarea { width: 100%; min-height: 46px; box-sizing: border-box; }
+label.f { display: grid; grid-template-columns: 150px 1fr; gap: 6px; align-items: center; margin: 4px 0; }
+label.f > input, label.f > select, label.f > textarea { width: 100%; box-sizing: border-box; }
+.events { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.events label { white-space: nowrap; }
+.hint { border-left: 3px solid var(--warn); padding: 4px 8px; margin: 6px 0; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+table { border-collapse: collapse; width: 100%; } td { padding: 2px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+</style>
+</head>
+<body>
+<h3>Notifications and automation</h3>
+<div id="status" class="small muted">Asking the service...</div>
+<div id="missing"></div>
+
+<h4>Rules</h4>
+<div id="rules"></div>
+<div id="msg" class="small"></div>
+
+<h4>Add a rule</h4>
+<div class="row">
+  <select id="preset">
+    <option value="done">Tell me when a job ends</option>
+    <option value="alarm">Tell me when a job stops for an alarm</option>
+    <option value="paused">Tell me when a job pauses</option>
+    <option value="exhaust">Run the exhaust (a smart plug) for each job</option>
+    <option value="wait">Hold each job until the exhaust is on</option>
+    <option value="mqtt">Send every event to MQTT</option>
+    <option value="empty">An empty rule</option>
+  </select>
+  <button id="add">Add</button>
+</div>
+<div id="plugform" class="card" style="display:none">
+  <div class="small muted">Which plug, and where it is on your network:</div>
+  <label class="f">Plug <select id="plugkind">
+    <option value="shelly1">Shelly (first generation)</option>
+    <option value="shelly2">Shelly Plus, Pro, or Gen 3</option>
+    <option value="tasmota">Tasmota</option>
+    <option value="ha">Home Assistant switch</option>
+  </select></label>
+  <label class="f">Address <input id="plugaddr" placeholder="192.0.2.40, or ha.lan:8123 for Home Assistant"></label>
+  <div id="haonly" style="display:none">
+    <label class="f">Entity <input id="haentity" placeholder="switch.exhaust"></label>
+    <label class="f">Access token <input id="hatoken" type="password" placeholder="a long-lived access token"></label>
+  </div>
+  <label class="f" id="runonrow">Run on after a job, s <input id="runon" type="number" min="0" max="3600" value="120"></label>
+  <div class="row"><button id="plugmake" class="primary">Make the rules</button><button id="plugcancel">Cancel</button></div>
+</div>
+
+<div id="editor" class="card" style="display:none"></div>
+
+<h4>What happened</h4>
+<div id="happened" class="small"></div>
+
+<script>
+/*
+ * ffx-bridge.js - a package page's side of the control panel's bridge
+ * Copyright 2026 514 LLC d/b/a OpenGlow
+ * Written by Scott Wiederhold
+ * SPDX-License-Identifier: MIT
+ *
+ * A package's page runs in a sandboxed frame that can reach nothing: no
+ * network, no session, no panel. Everything it wants it asks the panel for
+ * over postMessage, and the panel decides by what the package may use. This
+ * is the asking side: one promise per call, resolved with the panel's answer
+ * or rejected with its words. A page is one self-contained file, so this
+ * script is pasted into it (inside a <script> element) rather than loaded.
+ *
+ *   ffx.self()                          -> {id, version, tier, capabilities}
+ *   ffx.machine.status() / .cool() / .mode()               (machine.read)
+ *   ffx.settings.get() / .set({key: value})               (settings.own)
+ *   ffx.camera.frame({camera, resolution, quality, lamp})  -> a Blob (JPEG)
+ *   ffx.motion.jog({x, y, z, feed}) / .cancel()           (motion.jog)
+ *   ffx.motion.job({program, lit_within_s, timeout_s})    (motion.job)
+ *   ffx.motion.jobState() / .jobAbort()                   (motion.job)
+ *   ffx.frame.height(px)                                  -> {px}, inside the panel's bounds
+ *   ffx.service.call(method, path, body)                  -> {status, body}, from the package's own service
+ *
+ * Extension API 0.1. The panel answers only its own frame's parent window,
+ * and this script listens to nothing else.
+ */
+var ffx = (function () {
+  'use strict';
+  var n = 0,
+    waiting = {};
+
+  window.addEventListener('message', function (ev) {
+    var m = ev.data;
+    if (ev.source !== window.parent || !m || m.forgefirm !== 1 || !waiting[m.id]) return;
+    var w = waiting[m.id];
+    delete waiting[m.id];
+    clearTimeout(w.timer);
+    if (m.ok) w.ok(m.value);
+    else w.err(new Error(m.error || 'refused'));
+  });
+
+  /* One call. A camera frame can take seconds (the camera starts, and a
+   * capture waits for a viewer to go), so the default wait is long. */
+  function call(name, args, waitMs) {
+    return new Promise(function (ok, err) {
+      var id = ++n;
+      waiting[id] = {
+        ok: ok,
+        err: err,
+        timer: setTimeout(function () {
+          if (!waiting[id]) return;
+          delete waiting[id];
+          err(new Error('the panel did not answer ' + name));
+        }, waitMs || 40000)
+      };
+      window.parent.postMessage({ forgefirm: 1, id: id, call: name, args: args }, '*');
+    });
+  }
+
+  return {
+    version: '0.1',
+    call: call,
+    self: function () { return call('self'); },
+    machine: {
+      status: function () { return call('machine.status'); },
+      cool: function () { return call('machine.cool'); },
+      mode: function () { return call('machine.mode'); }
+    },
+    settings: {
+      get: function () { return call('settings.get'); },
+      set: function (patch) { return call('settings.set', patch); }
+    },
+    camera: {
+      frame: function (opts) { return call('camera.frame', opts || { camera: 'lid' }, 60000); }
+    },
+    motion: {
+      jog: function (move) { return call('motion.jog', move, 120000); },
+      cancel: function () { return call('motion.cancel'); },
+      job: function (spec) { return call('motion.job', spec); },
+      jobState: function () { return call('motion.job.state'); },
+      jobAbort: function () { return call('motion.job.abort'); }
+    },
+    frame: {
+      height: function (px) { return call('frame.height', { px: px }); }
+    },
+    /* The package's own service answers; the host waits ten seconds for it. */
+    service: {
+      call: function (method, path, body) {
+        return call('service.call', { method: method, path: path, body: body }, 20000);
+      }
+    }
+  };
+})();
+</script>
+<script>
+'use strict';
+var KEPT = '__kept__', VIEW = { rules: [], known_events: [] }, SELF = { destinations: [] }, EDIT = null;
+var SERVICES = ['ntfy', 'pushover', 'telegram', 'discord', 'webhook'];
+/* the fields of each kind of action: [name, kind, choices or placeholder] */
+var FIELDS = {
+  notify: {
+    all: [['title', 'text', 'Laser'], ['message', 'area', 'The job is done ({event})']],
+    ntfy: [['topic', 'text', 'a topic of your own'], ['server', 'text', 'https://ntfy.sh'], ['token', 'secret'], ['priority', 'number', '1 to 5']],
+    pushover: [['token', 'secret', 'the application token'], ['user', 'secret', 'your user key'], ['priority', 'number', '-2 to 1']],
+    telegram: [['token', 'secret', "the bot's token"], ['chat_id', 'text', 'the chat id']],
+    discord: [['url', 'secret', 'https://discord.com/api/webhooks/...']],
+    webhook: [['url', 'text', 'https://...']]
+  },
+  http: [['method', 'select', ['GET', 'POST', 'PUT']], ['url', 'text', 'http://192.0.2.40/relay/0?turn=on'], ['body', 'area'],
+         ['content_type', 'text', 'application/json'], ['auth', 'secret', 'Bearer ...']],
+  mqtt: [['broker', 'text', 'broker.lan:1883'], ['topic', 'text', 'forgefirm/{event}'], ['payload', 'area', 'empty: the event as JSON'],
+         ['retain', 'bool'], ['username', 'text'], ['password', 'secret']],
+  hold_until: [['url', 'text', 'http://192.0.2.40/relay/0'], ['match', 'text', '"ison":true'], ['timeout_s', 'number', '30'],
+               ['every_s', 'number', '2'], ['reason', 'text', 'waiting for the exhaust to confirm'], ['auth', 'secret']],
+  clear_hold: []
+};
+var TYPES = { notify: 'Notify', http: 'Ask an address (a plug, Home Assistant)', mqtt: 'Publish to MQTT',
+              hold_until: 'Hold the job until an address answers', clear_hold: 'Clear the hold' };
+
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function say(t, bad) { var m = $('msg'); m.textContent = t || ''; m.className = 'small ' + (bad ? 'bad' : 'ok'); }
+function call(method, path, body) {
+  return ffx.service.call(method, path, body).then(function (r) {
+    if (r.status !== 200) throw new Error((r.body && r.body.error) || ('the service answered ' + r.status));
+    return r.body;
+  });
+}
+
+/* ---- where each action goes, and what the operator has still to name ---- */
+function hostport(u) {
+  try {
+    var x = new URL(u);
+    if (x.protocol !== 'http:' && x.protocol !== 'https:') return null;
+    return x.hostname.toLowerCase() + ':' + (x.port || (x.protocol === 'https:' ? '443' : '80'));
+  } catch (e) { return null; }
+}
+function destOf(a) {
+  if (a.type === 'notify') {
+    if (a.service === 'ntfy') return hostport(a.server || 'https://ntfy.sh');
+    if (a.service === 'pushover') return 'api.pushover.net:443';
+    if (a.service === 'telegram') return 'api.telegram.org:443';
+    if (a.service === 'discord') return a.url && a.url !== KEPT ? hostport(a.url) : 'discord.com:443';
+    return hostport(a.url || '');
+  }
+  if (a.type === 'http' || a.type === 'hold_until') return hostport(a.url || '');
+  if (a.type === 'mqtt') return (a.broker || '').toLowerCase() || null;
+  return null;
+}
+function renderMissing() {
+  var have = SELF.destinations || [], want = {}, i, k;
+  for (i = 0; i < VIEW.rules.length; i++)
+    for (k = 0; k < (VIEW.rules[i].do || []).length; k++) {
+      var d = destOf(VIEW.rules[i].do[k]);
+      if (d && have.indexOf(d) < 0) want[d] = true;
+    }
+  var list = Object.keys(want);
+  $('missing').innerHTML = list.length
+    ? "<div class='hint small'>Not yet reachable: " + list.map(function (d) { return '<code>' + esc(d) + '</code>'; }).join(', ') +
+      '. Name each one on this package\'s card, under <b>Places you named for it</b>, and the service starts again with it.</div>'
+    : '';
+}
+
+/* ---- the list ---- */
+function summary(a) {
+  var t = TYPES[a.type] || a.type, w = a.after_s ? ' after ' + a.after_s + ' s' : '';
+  if (a.type === 'notify') t = 'Notify by ' + a.service + (a.topic ? ' (' + a.topic + ')' : '');
+  if (a.type === 'http') t = (a.method || 'GET') + ' ' + (a.url || '');
+  if (a.type === 'mqtt') t = 'MQTT ' + (a.topic || '') + ' at ' + (a.broker || '');
+  if (a.type === 'hold_until') t = 'Hold until ' + (a.url || '') + ' answers ' + (a.match || '');
+  return esc(t) + w + (a.cancel_on && a.cancel_on.length ? ', unless ' + esc(a.cancel_on.join(' or ')) + ' comes first' : '');
+}
+function renderRules() {
+  var g = '', i, k;
+  for (i = 0; i < VIEW.rules.length; i++) {
+    var r = VIEW.rules[i], cond = r.if ? Object.keys(r.if).map(function (k2) { return k2 + ' = ' + r.if[k2]; }).join(', ') : '';
+    g += "<div class='card'><div class='row'><b>" + esc(r.name || r.id) + '</b>' +
+      (r.enabled === false ? " <span class='warn small'>off</span>" : '') +
+      "<span class='small muted'>on " + esc(r.on.join(', ')) + (cond ? ' when ' + esc(cond) : '') + '</span></div><ol class="small">';
+    for (k = 0; k < (r.do || []).length; k++) {
+      var tryable = r.do[k].type !== 'hold_until' && r.do[k].type !== 'clear_hold';
+      g += '<li>' + summary(r.do[k]) + (tryable ? " <button class='test' data-id='" + esc(r.id) + "' data-n='" + (k + 1) + "'>Try it</button>" : '') + '</li>';
+    }
+    g += "</ol><div class='row'><button class='edit' data-id='" + esc(r.id) + "'>Edit</button>" +
+      "<button class='toggle' data-id='" + esc(r.id) + "'>" + (r.enabled === false ? 'Turn on' : 'Turn off') + '</button>' +
+      "<button class='danger del' data-id='" + esc(r.id) + "'>Delete</button></div></div>";
+  }
+  $('rules').innerHTML = g || "<p class='muted small'>No rule yet. Add one below.</p>";
+  renderMissing();
+}
+function load() {
+  return Promise.all([ffx.self(), call('GET', '/rules')]).then(function (x) {
+    SELF = x[0] || SELF;
+    VIEW = x[1];
+    KEPT = VIEW.kept || KEPT;
+    renderRules();
+    if (VIEW.error) say(VIEW.error, true);
+  }).catch(function (e) { say(String(e.message || e), true); });
+}
+function findRule(id) { for (var i = 0; i < VIEW.rules.length; i++) if (VIEW.rules[i].id === id) return VIEW.rules[i]; return null; }
+function save(rule) {
+  return call('POST', '/rule', { rule: rule }).then(function (v) { VIEW = v; renderRules(); say('Saved.'); });
+}
+
+/* ---- the editor ---- */
+function field(path, f, value) {
+  var name = f[0], kind = f[1], extra = f[2], id = 'f-' + path.replace(/\./g, '-'), h = "<label class='f'>" + esc(name.replace(/_/g, ' '));
+  if (kind === 'select')
+    h += "<select id='" + id + "' data-p='" + path + "'>" + extra.map(function (c) { return '<option' + (c === value ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>';
+  else if (kind === 'area')
+    h += "<textarea id='" + id + "' data-p='" + path + "' placeholder='" + esc(extra || '') + "'>" + esc(value || '') + '</textarea>';
+  else if (kind === 'bool')
+    h += "<input type='checkbox' id='" + id + "' data-p='" + path + "' data-k='bool'" + (value ? ' checked' : '') + '>';
+  else if (kind === 'secret')
+    h += "<input type='password' id='" + id + "' data-p='" + path + "' data-k='secret' data-was='" + (value === KEPT ? 'kept' : '') +
+      "' placeholder='" + esc(value === KEPT ? 'saved: leave it empty to keep it' : (extra || '')) + "'>";
+  else
+    h += "<input id='" + id + "' data-p='" + path + "' data-k='" + kind + "' value='" + esc(value == null ? '' : value) + "' placeholder='" + esc(extra || '') + "'>";
+  return h + '</label>';
+}
+function renderEditor() {
+  var r = EDIT, g = '', i, k, known = VIEW.known_events || [];
+  g += field('name', ['name', 'text', 'what this rule is for'], r.name);
+  g += "<div class='small'>When any of these happens:</div><div class='events'>";
+  for (i = 0; i < known.length; i++)
+    g += "<label><input type='checkbox' class='ev' value='" + esc(known[i]) + "'" + (r.on.indexOf(known[i]) >= 0 ? ' checked' : '') + '> ' + esc(known[i]) + '</label>';
+  g += "<label><input type='checkbox' class='ev' value='*'" + (r.on.indexOf('*') >= 0 ? ' checked' : '') + '> every event</label></div>';
+  var cond = r.if ? Object.keys(r.if).map(function (k2) { return k2 + '=' + r.if[k2]; }).join(', ') : '';
+  g += "<label class='f'>Only when <input id='f-if' value='" + esc(cond) + "' placeholder='result=ended (the event&#39;s data)'></label>";
+  for (k = 0; k < r.do.length; k++) {
+    var a = r.do[k], p = 'do.' + k + '.';
+    g += "<div class='card'><div class='row'><b>" + (k + 1) + '. ' + esc(TYPES[a.type]) + "</b><button class='danger rmact' data-n='" + k + "'>Remove</button></div>";
+    var fl = a.type === 'notify' ? [['service', 'select', SERVICES]].concat(FIELDS.notify.all, FIELDS.notify[a.service] || []) : FIELDS[a.type];
+    for (i = 0; i < fl.length; i++) g += field(p + fl[i][0], fl[i], a[fl[i][0]]);
+    g += field(p + 'after_s', ['after_s', 'number', 'seconds to wait first (0 to 3600)'], a.after_s);
+    g += field(p + 'cancel_on', ['cancel_on', 'text', 'events that drop a waiting one: job.arming'], (a.cancel_on || []).join(', '));
+    g += '</div>';
+  }
+  g += "<div class='row'><select id='newact'>" + Object.keys(TYPES).map(function (t) { return "<option value='" + t + "'>" + esc(TYPES[t]) + '</option>'; }).join('') +
+    "</select><button id='addact'>Add an action</button></div>";
+  g += "<div class='row' style='margin-top:8px'><button class='primary' id='save'>Save</button><button id='cancel'>Cancel</button></div>";
+  $('editor').innerHTML = g;
+  $('editor').style.display = '';
+  var s = $('editor').querySelectorAll("select[data-p$='.service']");
+  for (i = 0; i < s.length; i++) s[i].addEventListener('change', function () { collect(); renderEditor(); });
+}
+/* The form back into the rule. A secret left empty keeps what was saved. */
+function collect() {
+  var r = EDIT, ins = $('editor').querySelectorAll('[data-p]'), i;
+  r.name = ($('f-name') || {}).value || r.name;
+  r.on = Array.prototype.map.call($('editor').querySelectorAll('.ev:checked'), function (c) { return c.value; });
+  var cond = ($('f-if').value || '').trim();
+  if (cond) {
+    r.if = {};
+    cond.split(',').forEach(function (kv) {
+      var at = kv.indexOf('=');
+      if (at < 1) return;
+      var key = kv.slice(0, at).trim(), val = kv.slice(at + 1).trim();
+      r.if[key] = val === 'true' ? true : val === 'false' ? false : /^-?\d+(\.\d+)?$/.test(val) ? Number(val) : val;
+    });
+  } else delete r.if;
+  for (i = 0; i < ins.length; i++) {
+    var p = ins[i].getAttribute('data-p').split('.'), kind = ins[i].getAttribute('data-k');
+    if (p[0] !== 'do') continue;
+    var a = r.do[Number(p[1])], key = p[2], v = ins[i].type === 'checkbox' ? ins[i].checked : ins[i].value;
+    if (kind === 'secret') { if (v) a[key] = v; else if (ins[i].getAttribute('data-was') === 'kept') a[key] = KEPT; else delete a[key]; continue; }
+    if (kind === 'bool') { if (v) a[key] = true; else delete a[key]; continue; }
+    if (key === 'cancel_on') { var l = v.split(',').map(function (x) { return x.trim(); }).filter(Boolean); if (l.length) a[key] = l; else delete a[key]; continue; }
+    if (kind === 'number' || key === 'after_s') { if (v === '') delete a[key]; else a[key] = Number(v); continue; }
+    if (v === '') delete a[key]; else a[key] = v;
+  }
+}
+function edit(rule) {
+  EDIT = JSON.parse(JSON.stringify(rule));
+  renderEditor();
+  $('editor').scrollIntoView({ block: 'nearest' });
+}
+function newId(base) { return (base || 'rule').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 20) + '-' + Date.now().toString(36).slice(-6); }
+
+/* ---- presets ---- */
+function notifyRule(id, name, on, cond, message) {
+  var r = { id: newId(id), name: name, on: on, do: [{ type: 'notify', service: 'ntfy', topic: '', title: 'Laser', message: message }] };
+  if (cond) r.if = cond;
+  return r;
+}
+function plugUrls(kind, addr, entity) {
+  var base = (addr.indexOf('://') > 0 ? '' : 'http://') + addr.replace(/\/+$/, '');
+  if (kind === 'shelly1') return { on: base + '/relay/0?turn=on', off: base + '/relay/0?turn=off', status: base + '/relay/0', match: '"ison":true' };
+  if (kind === 'shelly2') return { on: base + '/rpc/Switch.Set?id=0&on=true', off: base + '/rpc/Switch.Set?id=0&on=false', status: base + '/rpc/Switch.GetStatus?id=0', match: '"output":true' };
+  if (kind === 'tasmota') return { on: base + '/cm?cmnd=Power%20On', off: base + '/cm?cmnd=Power%20Off', status: base + '/cm?cmnd=Power', match: '"POWER":"ON"' };
+  return { on: base + '/api/services/switch/turn_on', off: base + '/api/services/switch/turn_off', status: base + '/api/states/' + entity, match: '"state":"on"', ha: true };
+}
+function plugAction(u, which, token, entity) {
+  var a = { type: 'http', method: u.ha ? 'POST' : 'GET', url: u[which] };
+  if (u.ha) { a.body = JSON.stringify({ entity_id: entity }); a.content_type = 'application/json'; a.auth = 'Bearer ' + token; }
+  return a;
+}
+function makePlugRules() {
+  var kind = $('plugkind').value, addr = $('plugaddr').value.trim(), entity = $('haentity').value.trim(), token = $('hatoken').value.trim();
+  if (!addr) return say('The plug\'s address first.', true);
+  if (kind === 'ha' && (!entity || !token)) return say('Home Assistant needs the entity and an access token.', true);
+  var u = plugUrls(kind, addr, entity), want = $('preset').value, rules = [];
+  if (want === 'exhaust') {
+    rules.push({ id: newId('exhaust-on'), name: 'The exhaust on for a job', on: ['job.arming'], do: [plugAction(u, 'on', token, entity)] });
+    var off = plugAction(u, 'off', token, entity);
+    off.after_s = Number($('runon').value) || 0;
+    off.cancel_on = ['job.arming'];
+    rules.push({ id: newId('exhaust-off'), name: 'The exhaust off after a job', on: ['job.ended'], do: [off] });
+  } else {
+    var w = { type: 'hold_until', url: u.status, match: u.match, timeout_s: 30, every_s: 2 };
+    if (u.ha) w.auth = 'Bearer ' + token;
+    rules.push({ id: newId('exhaust-wait'), name: 'Hold the job until the exhaust is on', on: ['job.arming'], do: [plugAction(u, 'on', token, entity), w] });
+  }
+  $('plugform').style.display = 'none';
+  $('hatoken').value = '';
+  rules.reduce(function (p, r) { return p.then(function () { return save(r); }); }, Promise.resolve())
+    .catch(function (e) { say(String(e.message || e), true); });
+}
+function addPreset() {
+  var p = $('preset').value;
+  if (p === 'exhaust' || p === 'wait') {
+    $('plugform').style.display = '';
+    $('runonrow').style.display = p === 'exhaust' ? '' : 'none';
+    return;
+  }
+  if (p === 'done') return edit(notifyRule('job-done', 'A job ends', ['job.ended'], { result: 'ended' }, 'The job is done.'));
+  if (p === 'alarm') return edit(notifyRule('job-alarm', 'A job stops for an alarm', ['job.ended'], { result: 'alarm' }, 'The job stopped for an alarm.'));
+  if (p === 'paused') return edit(notifyRule('job-paused', 'A job pauses', ['job.paused'], null, 'The job paused: {data.reason}.'));
+  if (p === 'mqtt') return edit({ id: newId('mqtt'), name: 'Every event to MQTT', on: ['*'], do: [{ type: 'mqtt', broker: '', topic: 'forgefirm/{event}' }] });
+  edit({ id: newId('rule'), name: '', on: ['job.ended'], do: [{ type: 'notify', service: 'ntfy', topic: '', message: '' }] });
+}
+
+/* ---- what happened ---- */
+function ago(s) { return s < 60 ? s + ' s ago' : s < 3600 ? Math.round(s / 60) + ' min ago' : Math.round(s / 3600) + ' h ago'; }
+function renderStatus(st) {
+  var h = st.hold || {};
+  $('status').innerHTML = (st.connected ? "<span class='ok'>Following the machine's events.</span>" : "<span class='warn'>Waiting for the machine's events.</span>") +
+    (h.raised ? " <span class='warn'>Holding the job: " + esc(h.reason) + '.</span>' : '') +
+    ((st.pending || []).length ? ' ' + st.pending.map(function (p) { return esc(p.rule) + ' ' + p.action + ' in ' + p.in_s + ' s'; }).join(', ') : '');
+  var g = '<table>', i;
+  for (i = 0; i < (st.outcomes || []).length && i < 12; i++) {
+    var o = st.outcomes[i];
+    g += "<tr><td class='" + (o.ok ? 'ok' : 'bad') + "'>" + (o.ok ? 'done' : 'failed') + '</td><td>' + esc(o.rule) + ' ' + o.action + '</td><td>' + esc(o.detail) + "</td><td class='muted'>" + ago(o.ago_s) + '</td></tr>';
+  }
+  for (i = 0; i < (st.events || []).length && i < 6; i++)
+    g += "<tr><td class='muted'>event</td><td>" + esc(st.events[i].event) + '</td><td><code>' + esc(st.events[i].data) + "</code></td><td class='muted'>" + ago(st.events[i].ago_s) + '</td></tr>';
+  $('happened').innerHTML = g + '</table>';
+}
+function poll() {
+  if (document.hidden) return;
+  call('GET', '/status').then(renderStatus).catch(function (e) { $('status').textContent = String(e.message || e); });
+}
+
+/* ---- the buttons ---- */
+document.addEventListener('click', function (ev) {
+  var b = ev.target.closest ? ev.target.closest('button') : null, id = b && b.getAttribute('data-id');
+  if (!b) return;
+  if (b.id === 'add') addPreset();
+  else if (b.id === 'plugmake') makePlugRules();
+  else if (b.id === 'plugcancel') $('plugform').style.display = 'none';
+  else if (b.classList.contains('edit')) edit(findRule(id));
+  else if (b.classList.contains('toggle')) { var r = JSON.parse(JSON.stringify(findRule(id))); r.enabled = r.enabled === false; save(r).catch(function (e) { say(String(e.message || e), true); }); }
+  else if (b.classList.contains('del')) call('POST', '/rule/delete', { id: id }).then(function (v) { VIEW = v; renderRules(); say('Deleted.'); }).catch(function (e) { say(String(e.message || e), true); });
+  else if (b.classList.contains('test')) {
+    say('Trying it...');
+    call('POST', '/test', { rule: id, action: Number(b.getAttribute('data-n')) })
+      .then(function (t) { say((t.ok ? 'It worked: ' : 'It did not work: ') + t.detail, !t.ok); poll(); })
+      .catch(function (e) { say(String(e.message || e), true); });
+  } else if (b.id === 'addact') { collect(); var t = $('newact').value, a = { type: t }; if (t === 'notify') a.service = 'ntfy'; if (t === 'http') a.method = 'GET'; EDIT.do.push(a); renderEditor(); }
+  else if (b.classList.contains('rmact')) { collect(); EDIT.do.splice(Number(b.getAttribute('data-n')), 1); renderEditor(); }
+  else if (b.id === 'save') { collect(); save(EDIT).then(function () { $('editor').style.display = 'none'; EDIT = null; }).catch(function (e) { say(String(e.message || e), true); }); }
+  else if (b.id === 'cancel') { $('editor').style.display = 'none'; EDIT = null; }
+});
+$('plugkind').addEventListener('change', function () { $('haonly').style.display = $('plugkind').value === 'ha' ? '' : 'none'; });
+ffx.frame.height(1200).catch(function () {});
+load().then(poll);
+setInterval(poll, 5000);
+</script>
+</body>
+</html>
