@@ -42,14 +42,15 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PKG = os.path.join(HERE, "..")
-REPO = os.path.join(PKG, "..", "..")
-FORGEEXT = os.environ.get("FORGEEXT") or os.path.join(REPO, "build", "forgeext")
+# forgeext and forgefirm are sibling checkouts by default (the project's layout); in CI the kit sets the paths.
+KIT = os.environ.get("FORGEEXT_SRC") or os.path.join(PKG, "..", "forgeext")
+FORGEEXT = os.environ.get("FORGEEXT") or os.path.join(KIT, "build", "forgeext")
 FWUP = os.environ.get("FWUP") or shutil.which("fwup")
 NFT = os.environ.get("NFT") or shutil.which("nft") or "/usr/sbin/nft"
-RULES = os.environ.get("FFX_RULES") or os.path.join(REPO, "..", "forgefirm", "meta-forgefirm", "recipes-forgefirm",
+RULES = os.environ.get("FFX_RULES") or os.path.join(PKG, "..", "forgefirm", "meta-forgefirm", "recipes-forgefirm",
                                                     "forgefirm-sandbox", "files", "ffx.nft")
 BIN = os.environ.get("AUTOMATION_BIN") or os.path.join(PKG, "build", "automation")
-MKFFX = os.path.join(REPO, "tools", "mkffx.sh")
+MKFFX = os.environ.get("MKFFX") or os.path.join(KIT, "tools", "mkffx.sh")
 CG_PARENT = "/sys/fs/cgroup/forgeext-automation-test"
 HERE_ADDR, PEER_ADDR = "10.99.3.1", "10.99.3.2"
 ID = "org.openglow.automation"

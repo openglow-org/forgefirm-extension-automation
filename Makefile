@@ -8,16 +8,19 @@
 # computer, for the integration test, and `make test` builds and runs the
 # unit tests. `make pack` lays out what the package ships - the manifest,
 # the page, and the binary, and nothing of the source or its tests - in
-# build/pkg and packs it with ffx (KEY=<file.priv> signs it). The kit's
-# ffx.h comes from sdk/c.
+# build/pkg and packs it with ffx (KEY=<file.priv> signs it). src/ffx.h is
+# the kit's native client, forgeext's sdk/c/ffx.h, copied as ffx new copies
+# it. FFX is forgeext's tools/ffx: a sibling checkout by default, and the
+# kit's in CI.
 
 CROSS  ?= arm-linux-gnueabihf-
 CC     ?= cc
 CFLAGS ?= -O2 -g0 -Wall -Wextra -Werror -std=gnu11 -D_FORTIFY_SOURCE=2 -fstack-protector-strong
-INC     = -I src -I ../../sdk/c
+INC     = -I src
+FFX    ?= ../forgeext/tools/ffx
 LIBS    = -lpthread -lm
 SRC     = src/main.c src/js.c src/rules.c src/web.c src/mqtt.c
-HDR     = src/js.h src/rules.h src/web.h src/mqtt.h ../../sdk/c/ffx.h
+HDR     = src/js.h src/rules.h src/web.h src/mqtt.h src/ffx.h
 
 all: bin/run
 
@@ -49,7 +52,7 @@ stage: bin/run manifest.json ui/index.html
 	cp bin/run build/pkg/bin/
 
 pack: stage
-	python3 ../../tools/ffx pack build/pkg $(if $(KEY),--key $(KEY)) --out build/automation.ffx
+	python3 $(FFX) pack build/pkg $(if $(KEY),--key $(KEY)) --out build/automation.ffx
 
 clean:
 	rm -rf bin build

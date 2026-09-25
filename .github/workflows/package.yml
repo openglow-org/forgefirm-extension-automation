@@ -1,0 +1,29 @@
+# Copyright 2026 514 LLC d/b/a OpenGlow
+# Written by Scott Wiederhold
+# SPDX-License-Identifier:    MIT
+
+# This package's CI and its releases, by forgeext's shared workflow. On every
+# push and pull request: the unit tests, the service built for the machine and
+# staged as it ships, linted and packed, and the service under the real
+# extension host. On main, a manifest version with no release yet is signed
+# with EXTENSION_SIGNING_KEY, the extension-signing environment's secret, and
+# published as release v<version> with its catalog record.
+
+name: package
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    uses: openglow-org/forgeext/.github/workflows/package.yml@main
+    with:
+      apt: gcc-arm-linux-gnueabihf
+      test: make test
+      host-test: make host && python3 -B tests/automation_test.py
+    secrets: inherit
