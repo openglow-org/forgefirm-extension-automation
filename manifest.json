@@ -6,7 +6,7 @@
   "description": "Rules that turn the machine's events into notifications, requests to your own devices (a smart plug for the exhaust, Home Assistant), and MQTT messages, and that can hold a job until the exhaust is on.",
   "author": "OpenGlow",
   "license": "MIT",
-  "homepage": "https://docs.forgefirm.org/usage/extensions/automation/",
+  "homepage": "https://github.com/openglow-org/forgefirm-extension-automation",
   "api": "0.1",
   "runtime": "native",
   "service": { "exec": "bin/run" },

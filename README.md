@@ -8,12 +8,10 @@ and its page in the control panel.
 It is also an example of a package's repository: a native service built for
 the machine, its unit tests, a test under the real extension host, and
 forgeext's shared workflow, which tests and packs it on every push and signs
-and publishes each new version as a release.
+and publishes each new version as a release. The catalog does not list it.
 
 | Subject | Page |
 |---|---|
-| Using it | [Notifications and automation](https://docs.forgefirm.org/usage/extensions/automation/) |
-| How it works | [Notifications and automation (technical)](https://docs.forgefirm.org/technical/forgefirm/automation/) |
 | A repository like this one, and its workflow | [A repository for your package](https://docs.forgefirm.org/developers/extensions/#a-repository-for-your-package) |
 | Listing a version in the catalog | [List a package in the catalog](https://docs.forgefirm.org/developers/extension-listing/) |
 
