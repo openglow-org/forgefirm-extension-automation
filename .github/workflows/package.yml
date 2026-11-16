@@ -13,7 +13,7 @@ name: package
 
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   pull_request:
 
 permissions:
@@ -23,6 +23,7 @@ jobs:
   package:
     uses: openglow-org/forgeext/.github/workflows/package.yml@main
     with:
+      forgeext-ref: ${{ github.repository_owner == 'openglow-org' && (github.ref_name == 'next' || github.base_ref == 'next') && 'next' || 'main' }}
       apt: gcc-arm-linux-gnueabihf
       test: make test
       host-test: make host && python3 -B tests/automation_test.py
