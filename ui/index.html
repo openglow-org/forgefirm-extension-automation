@@ -61,7 +61,7 @@ table { border-collapse: collapse; width: 100%; } td { padding: 2px 6px; border-
   <button id="add">Add</button>
 </div>
 <div id="plugform" class="card" style="display:none">
-  <div class="small muted">Which plug, and where it is on your network:</div>
+  <div class="small muted">Which plug, and where it is on your network: its address, or the name your network gives it (as ha.lan).</div>
   <label class="f">Plug <select id="plugkind">
     <option value="shelly1">Shelly (first generation)</option>
     <option value="shelly2">Shelly Plus, Pro, or Gen 3</option>
@@ -242,7 +242,7 @@ function renderMissing() {
   var list = Object.keys(want);
   $('missing').innerHTML = list.length
     ? "<div class='hint small'>Not yet reachable: " + list.map(function (d) { return '<code>' + esc(d) + '</code>'; }).join(', ') +
-      '. Name each one on this package\'s card, under <b>Places you named for it</b>, and the service starts again with it.</div>'
+      '. Name each one on this package\'s card, under <b>Places you named for it</b>, and the service starts again with it. A name on your own network works there.</div>'
     : '';
 }
 

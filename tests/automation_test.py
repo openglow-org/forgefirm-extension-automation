@@ -51,7 +51,10 @@ RULES = os.environ.get("FFX_RULES") or os.path.join(PKG, "..", "forgefirm", "met
 BIN = os.environ.get("AUTOMATION_BIN") or os.path.join(PKG, "build", "automation")
 MKFFX = os.environ.get("MKFFX") or os.path.join(KIT, "tools", "mkffx.sh")
 CG_PARENT = "/sys/fs/cgroup/forgeext-automation-test"
-HERE_ADDR, PEER_ADDR = "10.99.3.1", "10.99.3.2"
+# Two documentation networks, routed to each other over the veth pair: the peer is on no subnet of this
+# namespace's own, so a destination named by DNS may lead to it (the host refuses a name that answers a
+# private address or one of its own subnets).
+HERE_ADDR, PEER_ADDR = "203.0.113.1", "198.51.100.2"
 ID = "org.openglow.automation"
 SKIP = 77
 
@@ -221,6 +224,8 @@ def main():
     os.chmod(top, 0o755)
     root, run_dir, conf, safe = (os.path.join(top, n) for n in ("root", "run", "forgefirm.conf", "ext-safe"))
     subprocess.run(["ip", "link", "set", "lo", "up"], check=True)
+    # Shared, as the image's root mount is: the host starts no service where a namespace would keep the mounts.
+    subprocess.run(["mount", "--make-rshared", "/"], check=True)
     hosts = os.path.join(top, "hosts")
     with open(hosts, "w") as f:
         # the manifest's public destinations, each resolving to the peer, so that a start can judge them
@@ -234,7 +239,8 @@ def main():
                 ["ip", "link", "set", "ffxa1", "netns", str(peer.pid)],
                 ["ip", "addr", "add", HERE_ADDR + "/24", "dev", "ffxa0"], ["ip", "link", "set", "ffxa0", "up"],
                 ns + ["ip", "addr", "add", PEER_ADDR + "/24", "dev", "ffxa1"], ns + ["ip", "link", "set", "ffxa1", "up"],
-                ns + ["ip", "link", "set", "lo", "up"]):
+                ns + ["ip", "link", "set", "lo", "up"], ["ip", "route", "add", PEER_ADDR.rsplit(".", 1)[0] + ".0/24", "dev", "ffxa0"],
+                ns + ["ip", "route", "add", HERE_ADDR.rsplit(".", 1)[0] + ".0/24", "dev", "ffxa1"]):
         subprocess.run(cmd, check=True, capture_output=True)
     peer.stdin.write("go\n")
     peer.stdin.flush()
@@ -271,6 +277,8 @@ def main():
     os.makedirs(CG_PARENT, exist_ok=True)
     with open(CG_PARENT + "/cgroup.subtree_control", "w") as f:
         f.write("+cpu +memory +pids")
+    with open(CG_PARENT + "/cpu.idle", "w") as f:       # an idle group, as the image's ffx is: the host starts under no other
+        f.write("1")
 
     # The package's id is in OpenGlow's namespace: the test signs it with a key of its own and names that
     # key as the official one, as install_test does.
