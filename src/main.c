@@ -680,6 +680,7 @@ static js_t *rules_view(void)
         js_push(known, js_string(rules_known_events[i]));
     js_set(o, "action_types", types);
     js_set(o, "known_events", known);
+    js_set(o, "unsent", rules_unsent(doc));
     js_set(o, "kept", js_string(RULES_KEPT));
     if (rules_error[0])
         js_set(o, "error", js_string(rules_error));

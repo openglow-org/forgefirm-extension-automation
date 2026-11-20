@@ -256,12 +256,14 @@ function summary(a) {
   return esc(t) + w + (a.cancel_on && a.cancel_on.length ? ', unless ' + esc(a.cancel_on.join(' or ')) + ' comes first' : '');
 }
 function renderRules() {
-  var g = '', i, k;
+  var g = '', i, k, unsent = VIEW.unsent || {};
   for (i = 0; i < VIEW.rules.length; i++) {
     var r = VIEW.rules[i], cond = r.if ? Object.keys(r.if).map(function (k2) { return k2 + ' = ' + r.if[k2]; }).join(', ') : '';
     g += "<div class='card'><div class='row'><b>" + esc(r.name || r.id) + '</b>' +
       (r.enabled === false ? " <span class='warn small'>off</span>" : '') +
-      "<span class='small muted'>on " + esc(r.on.join(', ')) + (cond ? ' when ' + esc(cond) : '') + '</span></div><ol class="small">';
+      "<span class='small muted'>on " + esc(r.on.join(', ')) + (cond ? ' when ' + esc(cond) : '') + '</span></div>' +
+      (unsent[r.id] ? "<div class='warn small'>Never fires on " + esc(unsent[r.id].join(', ')) +
+        ': the machine does not send it to packages. Edit the rule and pick another event.</div>' : '') + '<ol class="small">';
     for (k = 0; k < (r.do || []).length; k++) {
       var tryable = r.do[k].type !== 'hold_until' && r.do[k].type !== 'clear_hold';
       g += '<li>' + summary(r.do[k]) + (tryable ? " <button class='test' data-id='" + esc(r.id) + "' data-n='" + (k + 1) + "'>Try it</button>" : '') + '</li>';

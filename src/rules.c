@@ -25,7 +25,7 @@ const char *const rules_action_types[] = { "notify", "http", "mqtt", "hold_until
 const char *const rules_known_events[] = {
     "job.arming", "job.armed", "job.paused", "job.resumed", "job.ended", "alarm", "cooling.verdict", "lid",
     "interlock", "mode.changed", "controller.started", "controller.stopped", "homing.started", "homing.completed",
-    "homing.failed", "motors.released", "motors.energized", "lease.changed", "button", "update.available",
+    "homing.failed", "motors.released", "motors.energized", "lease.changed", "update.available",
     "setup.flag", "telemetry.tick", "ext.will_freeze", "ext.thawed", "ext.shutdown", NULL,
 };
 static const char *const services[] = { "ntfy", "pushover", "telegram", "discord", "webhook", NULL };
@@ -303,6 +303,29 @@ js_t *rules_masked(const js_t *doc)
                 if (is_secret(one, one->keys[k]) && js_str(one->kids[k], "")[0])
                     js_set(one, one->keys[k], js_string(RULES_KEPT));
         }
+    }
+    return out;
+}
+
+js_t *rules_unsent(const js_t *doc)
+{
+    js_t *out = js_object();
+    js_t *list = js_get(doc, "rules");
+    for (int r = 0; r < js_len(list); r++) {
+        js_t *on = js_get(js_at(list, r), "on"), *names = NULL;
+        for (int i = 0; i < js_len(on); i++) {
+            const char *e = js_str(js_at(on, i), "");
+            int known = strcmp(e, "*") == 0;
+            for (int k = 0; rules_known_events[k] && !known; k++)
+                known = strcmp(e, rules_known_events[k]) == 0;
+            if (known)
+                continue;
+            if (!names)
+                names = js_array();
+            js_push(names, js_string(e));
+        }
+        if (names)
+            js_set(out, js_str(js_get(js_at(list, r), "id"), ""), names);
     }
     return out;
 }

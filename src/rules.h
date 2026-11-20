@@ -54,6 +54,13 @@ int rules_check(const js_t *doc, char *err, size_t elen);
  * by RULES_KEPT (an empty secret stays empty). */
 js_t *rules_masked(const js_t *doc);
 
+/* The triggers of saved rules that the machine sends no package, by rule
+ * id: {"<id>": ["button"]}. A rule saved on an event the page once
+ * offered (the machine's button) stays in the file and never fires on
+ * it; the page says so beside the rule. Empty when every trigger is one
+ * of rules_known_events or "*". */
+js_t *rules_unsent(const js_t *doc);
+
 /* A rule from the page: each RULES_KEPT takes the value the saved rule of
  * the same id had in the same action of the same type. 0, or -1 when
  * there is none to keep. */

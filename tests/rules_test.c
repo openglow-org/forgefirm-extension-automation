@@ -44,6 +44,21 @@ static const char *refusal(const char *rule)
 int main(void)
 {
     char err[300];
+    /* The machine sends a package no event of its button: the page offers
+     * none as a trigger. */
+    for (int i = 0; rules_known_events[i]; i++)
+        CHECK(strcmp(rules_known_events[i], "button"), "the page offers the button as a trigger");
+    /* A rule saved on it stays in the file and never fires: it is named for
+     * the page to mark, and a rule on events the machine sends is not. */
+    {
+        static const char saved[] = "{\"rules\":[{\"id\":\"old\",\"on\":[\"button\",\"job.ended\"]},"
+                                    "{\"id\":\"fine\",\"on\":[\"job.ended\",\"*\"]}]}";
+        js_t *d = js_parse(saved, strlen(saved), err, sizeof(err)), *u = rules_unsent(d);
+        CHECK(js_len(u) == 1 && js_len(js_get(u, "old")) == 1 && !strcmp(js_str(js_at(js_get(u, "old"), 0), ""), "button"),
+              "a saved rule on the button is named as one that never fires on it, and no other rule is");
+        js_free(u);
+        js_free(d);
+    }
     static const char *const good[] = {
         RULE("[\"job.ended\"]", GOOD_NTFY),
         "{\"id\":\"exhaust\",\"name\":\"Exhaust\",\"enabled\":true,\"on\":[\"job.arming\"],\"if\":{\"result\":\"ended\"},\"do\":["
