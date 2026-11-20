@@ -5,9 +5,11 @@
 # This package's CI and its releases, by forgeext's shared workflow. On every
 # push and pull request: the unit tests, the service built for the machine and
 # staged as it ships, linted and packed, and the service under the real
-# extension host. On main, a manifest version with no release yet is signed
-# with EXTENSION_SIGNING_KEY, the extension-signing environment's secret, and
-# published as release v<version> with its catalog record.
+# extension host. On main, a manifest version with no release yet is staged
+# by a job that holds no secret, then signed with EXTENSION_SIGNING_KEY, the
+# extension-signing environment's secret, by a job that runs none of this
+# repository's commands, and published as release v<version> with its catalog
+# record.
 
 name: package
 
@@ -17,13 +19,15 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: write    # the release
 
 jobs:
   package:
-    uses: openglow-org/forgeext/.github/workflows/package.yml@main
+    # forgeext pinned to one commit, the workflow and its kit alike: the signing job runs only code chosen here.
+    # Move both together.
+    uses: openglow-org/forgeext/.github/workflows/package.yml@12bd0faf870100f4fadeb7d8e1934af546c56563
     with:
-      forgeext-ref: ${{ github.repository_owner == 'openglow-org' && (github.ref_name == 'next' || github.base_ref == 'next') && 'next' || 'main' }}
+      forgeext-ref: 12bd0faf870100f4fadeb7d8e1934af546c56563
       apt: gcc-arm-linux-gnueabihf
       test: make test
       host-test: make host && python3 -B tests/automation_test.py
