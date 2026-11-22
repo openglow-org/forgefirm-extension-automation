@@ -54,7 +54,7 @@ table { border-collapse: collapse; width: 100%; } td { padding: 2px 6px; border-
     <option value="paused">Tell me when a job pauses</option>
     <option value="update">Tell me when new firmware is out</option>
     <option value="exhaust">Run the exhaust (a smart plug) for each job</option>
-    <option value="wait">Hold each job until the exhaust is on</option>
+    <option value="wait">Hold jobs until the exhaust is on (raised when the controller starts and at each lid opening or closing)</option>
     <option value="mqtt">Send every event to MQTT</option>
     <option value="empty">An empty rule</option>
   </select>
@@ -200,7 +200,8 @@ var FIELDS = {
   clear_hold: []
 };
 var TYPES = { notify: 'Notify', http: 'Ask an address (a plug, Home Assistant)', mqtt: 'Publish to MQTT',
-              hold_until: 'Hold the job until an address answers', clear_hold: 'Clear the hold' };
+              hold_until: 'Hold jobs until an address answers (before a job starts: one that fires under it is refused)',
+              clear_hold: 'Clear the hold' };
 
 function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -394,9 +395,14 @@ function makePlugRules() {
     off.cancel_on = ['job.arming'];
     rules.push({ id: newId('exhaust-off'), name: 'The exhaust off after a job', on: ['job.ended'], do: [off] });
   } else {
-    var w = { type: 'hold_until', url: u.status, match: u.match, timeout_s: 30, every_s: 2 };
+    // A hold that stands when a job first fires refuses the job, so it is
+    // raised before any job arms: when the controller starts, and when the
+    // lid opens or closes for the next job. The exhaust is turned on with
+    // it, and the hold clears once the plug answers on.
+    var w = { type: 'hold_until', url: u.status, match: u.match, timeout_s: 300, every_s: 2 };
     if (u.ha) w.auth = 'Bearer ' + token;
-    rules.push({ id: newId('exhaust-wait'), name: 'Hold the job until the exhaust is on', on: ['job.arming'], do: [plugAction(u, 'on', token, entity), w] });
+    rules.push({ id: newId('exhaust-wait'), name: 'Hold jobs until the exhaust is on',
+                 on: ['controller.started', 'lid'], do: [plugAction(u, 'on', token, entity), w] });
   }
   $('plugform').style.display = 'none';
   $('hatoken').value = '';

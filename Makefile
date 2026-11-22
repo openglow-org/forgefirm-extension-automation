@@ -43,6 +43,7 @@ test: build/js_test build/rules_test build/mqtt_test
 	./build/js_test
 	./build/rules_test
 	./build/mqtt_test
+	PYTHONDONTWRITEBYTECODE=1 python3 tests/page_test.py || [ $$? -eq 77 ]
 
 stage: bin/run manifest.json ui/index.html
 	rm -rf build/pkg
